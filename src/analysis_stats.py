@@ -1,8 +1,7 @@
-import pandas as pd
+import sqlite3
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-import datetime
 
 # ====================================================================
 # MODULE: analysis_stats.py
@@ -10,57 +9,25 @@ import datetime
 # ====================================================================
 
 # --- Configuration ---
-DATA_DIR = os.path.join("output", "data_store")
-DATA_FILE_FEATHER = os.path.join(DATA_DIR, "clean_sample_2021.feather")
-DATA_FILE_PICKLE = os.path.join(DATA_DIR, "clean_sample_2021.pkl")
+DB_PATH = os.path.join("data", "mot_database.db")
 OUTPUT_FILE = os.path.join("output", "analysis_summary.txt")
 
-# --- Global Data Store ---
-_df_analysis = None
 
-def _load_analysis_data():
-    """Loads the main MOT data DataFrame."""
-    global _df_analysis
-    if _df_analysis is not None:
-        return _df_analysis
-        
-    # REMOVED: print("Analysis tool loading dataset...") 
-    
-    try:
-        # NOTE: Using Feather first for performance, falling back to Pickle
-        if os.path.exists(DATA_FILE_FEATHER):
-            df = pd.read_feather(DATA_FILE_FEATHER)
-        elif os.path.exists(DATA_FILE_PICKLE):
-            df = pd.read_pickle(DATA_FILE_PICKLE)
-        else:
-            raise FileNotFoundError("Clean data file (feather or pickle) not found.")
-        
-        # Essential preprocessing for analysis (CRITICAL FOR GRAPHING)
-        df['first_use_date'] = pd.to_datetime(df['first_use_date'], errors='coerce')
-        df['test_date'] = pd.to_datetime(df['test_date'], errors='coerce')
-        
-        # Calculate Vehicle Age in Years (rounded down)
-        df['vehicle_age'] = ((df['test_date'] - df['first_use_date']).dt.days / 365.25).astype(int)
-        
-        # Normalize make/model for filtering
-        df['make'] = df['make'].str.strip().str.upper()
-        df['model'] = df['model'].str.strip().str.upper()
-
-        _df_analysis = df
-        # REMOVED: print("Analysis tool data loaded and preprocessed.")
-        return _df_analysis
-        
-    except Exception as e:
-        # print(f"Error loading analysis data: {e}") # Keep this commented out for GUI
-        return pd.DataFrame()
+def _get_connection():
+    """Returns a new SQLite connection to the MOT database."""
+    if not os.path.exists(DB_PATH):
+        raise FileNotFoundError(f"Database not found at {DB_PATH}. Run the pipeline first.")
+    return sqlite3.connect(DB_PATH)
 
 
 def generate_error_figure(title, message):
     """Helper function to return a clean Matplotlib error figure for the GUI."""
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.set_title(title, color='red', fontsize=16)
-    ax.text(0.5, 0.5, message, ha='center', va='center', fontsize=12)
-    ax.axis('off') # Hide axes for a clean message
+    fig.patch.set_facecolor('#1e1e2e')
+    ax.set_facecolor('#1e1e2e')
+    ax.set_title(title, color='#f38ba8', fontsize=16)
+    ax.text(0.5, 0.5, message, ha='center', va='center', fontsize=12, color='#cdd6f4')
+    ax.axis('off')
     plt.tight_layout()
     return fig
 
@@ -68,112 +35,146 @@ def generate_error_figure(title, message):
 def generate_pass_rate_graph(make, model, criteria):
     """
     Generates a Matplotlib Figure showing pass rates by age or mileage for a specific make/model.
+    Uses SQL queries directly on the SQLite database to avoid loading millions of rows into memory.
     """
-    df = _load_analysis_data()
-    
-    # 1. Handle Data Load Failure
-    if df.empty:
-        return generate_error_figure("Data Load Error", "Data failed to load. Check file paths and preprocessing steps.")
+    try:
+        conn = _get_connection()
+    except FileNotFoundError as e:
+        return generate_error_figure("Data Load Error", str(e))
 
-    # 2. Filter the data for the specific Make and Model
-    filtered_df = df[
-        (df['make'] == make.upper()) & 
-        (df['model'] == model.upper()) &
-        (df['test_result'].isin(['P', 'F'])) # Only consider Pass/Fail results
-    ].copy()
-    
-    # 3. Handle No Records Found After Filtering
-    if filtered_df.empty:
-        return generate_error_figure(f"No Data Found for {make} {model}", 
-                                     "0 records matched the criteria (Make/Model).")
+    make = make.strip().upper()
+    model = model.strip().upper()
 
-    # Convert results to a numeric 1/0 for calculation
-    filtered_df['is_pass'] = (filtered_df['test_result'] == 'P').astype(int)
-    
-    # 4. Define Grouping Logic based on criteria
+    # Validate criteria
+    if criteria not in ('age', 'mileage'):
+        conn.close()
+        return generate_error_figure("Invalid Criteria", "Criteria must be 'age' or 'mileage'.")
+
+    # Build SQL query based on criteria
     if criteria == 'age':
-        group_col = 'vehicle_age'
+        # Calculate vehicle age = (test_date year - first_use_date year) approximately
+        query = """
+            SELECT 
+                CAST((CAST(SUBSTR(test_date, 1, 4) AS INTEGER) - CAST(SUBSTR(first_use_date, 1, 4) AS INTEGER)) AS INTEGER) AS group_val,
+                COUNT(*) AS total_tests,
+                SUM(CASE WHEN test_result = 'P' THEN 1 ELSE 0 END) AS total_passes
+            FROM cleaned_tests
+            WHERE make = ? AND model = ? 
+              AND test_result IN ('P', 'F')
+              AND test_date != '' AND first_use_date != ''
+              AND LENGTH(test_date) >= 4 AND LENGTH(first_use_date) >= 4
+            GROUP BY group_val
+            HAVING group_val >= 0 AND group_val <= 50
+            ORDER BY group_val
+        """
         x_label = "Vehicle Age (Years)"
         title_suffix = "by Age"
-        
-    elif criteria == 'mileage':
-        group_col = 'mileage_group'
-        # Group mileage by 10,000 mile intervals
-        filtered_df['mileage_group'] = (filtered_df['test_mileage'] // 10000) * 10
+    else:  # mileage
+        query = """
+            SELECT 
+                CAST((test_mileage / 10000) * 10 AS INTEGER) AS group_val,
+                COUNT(*) AS total_tests,
+                SUM(CASE WHEN test_result = 'P' THEN 1 ELSE 0 END) AS total_passes
+            FROM cleaned_tests
+            WHERE make = ? AND model = ? 
+              AND test_result IN ('P', 'F')
+              AND test_mileage > 0
+            GROUP BY group_val
+            ORDER BY group_val
+        """
         x_label = "Test Mileage (Thousands of Miles)"
         title_suffix = "by Mileage"
-    else:
-        return generate_error_figure("Invalid Criteria", 
-                                     "Criteria must be 'age' or 'mileage'.")
 
+    cursor = conn.cursor()
+    cursor.execute(query, (make, model))
+    rows = cursor.fetchall()
+    conn.close()
 
-    # 5. Calculate Pass Rate for each group
-    grouped = filtered_df.groupby(group_col).agg(
-        total_tests=('is_pass', 'count'),
-        total_passes=('is_pass', 'sum')
-    ).reset_index()
-    
-    # Calculate Pass Rate: total_passes / total_tests
-    grouped['pass_rate'] = grouped['total_passes'] / grouped['total_tests']
-    
-    # Ensure there's plottable data
-    if grouped.empty:
-        return generate_error_figure(f"No Plottable Data for {make} {model}", 
-                                     "Filtering resulted in an empty dataset for plotting.")
+    # Handle no data
+    if not rows:
+        return generate_error_figure(f"No Data Found for {make} {model}",
+                                     "0 records matched the criteria (Make/Model).")
 
+    group_vals = [r[0] for r in rows]
+    total_tests = [r[1] for r in rows]
+    total_passes = [r[2] for r in rows]
+    pass_rates = [(p / t * 100) if t > 0 else 0 for p, t in zip(total_passes, total_tests)]
 
-    # 6. Generate Matplotlib Figure
+    # Generate Matplotlib Figure with dark theme
     fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # Plotting the Pass Rate (as a percentage)
-    ax.plot(grouped[group_col], grouped['pass_rate'] * 100, 
-            marker='o', linestyle='-', color='#007ACC', linewidth=2, markersize=7)
+    fig.patch.set_facecolor('#1e1e2e')
+    ax.set_facecolor('#252538')
 
-    ax.set_title(f"MOT Pass Rate for {make} {model} {title_suffix}", fontsize=16)
-    ax.set_xlabel(x_label, fontsize=12)
-    ax.set_ylabel("Pass Rate (%)", fontsize=12)
-    ax.grid(True, linestyle='--', alpha=0.7)
-    
-    # Set y-axis limits to 0-100% for clarity
+    ax.plot(group_vals, pass_rates,
+            marker='o', linestyle='-', color='#89b4fa', linewidth=2, markersize=7,
+            markerfacecolor='#b4befe', markeredgecolor='#89b4fa')
+
+    ax.set_title(f"MOT Pass Rate for {make} {model} {title_suffix}", fontsize=16, color='#cdd6f4', pad=15)
+    ax.set_xlabel(x_label, fontsize=12, color='#a6adc8')
+    ax.set_ylabel("Pass Rate (%)", fontsize=12, color='#a6adc8')
+    ax.grid(True, linestyle='--', alpha=0.3, color='#585b70')
     ax.set_ylim(0, 100)
-    
-    # Add labels to the points (Pass Rate %)
-    for x, y in zip(grouped[group_col], grouped['pass_rate'] * 100):
-        ax.annotate(f'{y:.1f}%', (x, y), textcoords="offset points", 
-                     xytext=(0, 10), ha='center', fontsize=9)
-    
-    plt.tight_layout() # Adjust layout to prevent labels from overlapping
-    
+
+    ax.tick_params(colors='#a6adc8')
+    ax.spines['bottom'].set_color('#585b70')
+    ax.spines['left'].set_color('#585b70')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    # Add labels to the points
+    for x, y in zip(group_vals, pass_rates):
+        ax.annotate(f'{y:.1f}%', (x, y), textcoords="offset points",
+                     xytext=(0, 10), ha='center', fontsize=9, color='#cdd6f4')
+
+    plt.tight_layout()
     return fig
 
 
 # --- Original analysis_stats function preserved for CLI reporting ---
 def analysis_stats():
     """Generates the original summary text report."""
-    df = _load_analysis_data()
-    if df.empty:
-        print("Cannot run full analysis: Data failed to load.")
+    try:
+        conn = _get_connection()
+    except FileNotFoundError:
+        print("Cannot run full analysis: Database not found.")
         return
-        
+
+    cursor = conn.cursor()
+
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+
     lines = []
     lines.append("=== OVERALL TEST RESULT DISTRIBUTION ===\n")
-    lines.append(str(df['test_result'].value_counts()))
-    lines.append("\n\n")
-    
-    total = len(df)
-    passes = (df['test_result'] == "P").sum()
-    fails = (df['test_result'] == "F").sum()
-    
-    lines.append("\n\n")
-    
+    cursor.execute("SELECT test_result, COUNT(*) as cnt FROM cleaned_tests GROUP BY test_result ORDER BY cnt DESC")
+    for row in cursor.fetchall():
+        lines.append(f"  {row[0]}: {row[1]}")
+    lines.append("\n")
+
+    cursor.execute("SELECT COUNT(*) FROM cleaned_tests WHERE test_result = 'P'")
+    passes = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM cleaned_tests WHERE test_result = 'F'")
+    fails = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM cleaned_tests")
+    total = cursor.fetchone()[0]
+
+    lines.append(f"Total: {total}, Passes: {passes}, Fails: {fails}")
+    lines.append("\n")
+
     lines.append("=== TEST RESULTS BY FUEL TYPE ===\n")
-    lines.append(str(pd.crosstab(df['fuel_type'], df['test_result'])))
-    
-    
+    cursor.execute("""
+        SELECT fuel_type, test_result, COUNT(*) as cnt 
+        FROM cleaned_tests 
+        GROUP BY fuel_type, test_result 
+        ORDER BY fuel_type, test_result
+    """)
+    for row in cursor.fetchall():
+        lines.append(f"  {row[0]} - {row[1]}: {row[2]}")
+
+    conn.close()
+
     with open(OUTPUT_FILE, "w") as f:
         f.write("\n".join(lines))
 
-    # You can keep these prints here, as this function is for CLI reporting.
     print("Analysis complete!")
     print("Saved to:", OUTPUT_FILE)
 
@@ -181,9 +182,8 @@ def analysis_stats():
 if __name__ == "__main__":
     # Example usage for CLI testing:
     try:
+        analysis_stats()
         fig_bmw = generate_pass_rate_graph("BMW", "3 SERIES", "age")
-        fig_ferrari = generate_pass_rate_graph("FERRARI", "458", "mileage")
-        
         plt.show()
     except Exception as e:
         print(f"CLI test failed: {e}")

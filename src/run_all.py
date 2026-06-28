@@ -1,35 +1,49 @@
 # run_all.py
 
 import os
+import sys
 
-# list of scripts to run (in order)
-SCRIPTS = [
-    "load_data.py",
-    "clean_data.py",
-    "analysis_stats.py",
-    "build_index.py",
-    "summary_report.py"
-]
+# Ensure the project root is used as the working directory
+# so that relative paths (data/, output/) resolve correctly.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(PROJECT_ROOT)
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+
+from load_data import load_in_chunks
+from clean_data import clean_data
+from build_index import create_indices
+from analysis_stats import analysis_stats
+from summary_report import write_report
 
 
 def main():
-    print("starting full pipeline...\n")
+    print("=" * 50)
+    print("Starting full pipeline...")
+    print("=" * 50)
 
-    for script in SCRIPTS:
-        path = os.path.join("src", script)
-        print("running:", script)
+    print("\n[1/5] Loading raw CSV data into SQLite...")
+    load_in_chunks()
+    print("----------------------------")
 
-        cmd = f"python {path}"
-        exit_code = os.system(cmd)
+    print("\n[2/5] Cleaning data...")
+    clean_data()
+    print("----------------------------")
 
-        if exit_code != 0:
-            print("error running:", script)
-            return
+    print("\n[3/5] Building database indexes...")
+    create_indices()
+    print("----------------------------")
 
-        print("done:", script)
-        print("----------------------------")
+    print("\n[4/5] Running analysis stats...")
+    analysis_stats()
+    print("----------------------------")
 
-    print("\nall tasks completed.")
+    print("\n[5/5] Generating summary report...")
+    write_report()
+    print("----------------------------")
+
+    print("\n" + "=" * 50)
+    print("All pipeline tasks completed successfully!")
+    print("=" * 50)
 
 
 if __name__ == "__main__":

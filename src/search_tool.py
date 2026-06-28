@@ -1,55 +1,27 @@
 import os
-import pandas as pd
-import pickle
-import numpy as np
+import sqlite3
 
 # --- Configuration ---
-DATA_DIR = os.path.join("output", "data_store")
-DATA_FILE_FEATHER = os.path.join(DATA_DIR, "clean_sample_2021.feather")
-DATA_FILE_PICKLE = os.path.join(DATA_DIR, "clean_sample_2021.pkl")
-INDEX_FILE = os.path.join(DATA_DIR, "indices.pkl")
+DB_PATH = os.path.join("data", "mot_database.db")
+
 
 # --- Core Search Class ---
 class MOT_Search_Tool:
     def __init__(self):
-        self.df = self._load_data()
-        self.indices = self._load_indices()
-        
-        # Pre-process: Extract Year from first_use_date for fast filtering
-        self.df['first_use_year'] = self.df['first_use_date'].str[:4]
+        if not os.path.exists(DB_PATH):
+            raise FileNotFoundError(f"Database not found at {DB_PATH}. Run the pipeline first.")
+        self.db_path = DB_PATH
+        print("Search tool connected to SQLite database.")
 
-
-    def _load_data(self):
-        print("loading dataset...")
-        try:
-            if os.path.exists(DATA_FILE_FEATHER):
-                df = pd.read_feather(DATA_FILE_FEATHER)
-            else:
-                df = pd.read_pickle(DATA_FILE_PICKLE)
-            print("rows loaded:", len(df))
-            return df
-        except Exception as e:
-            print(f"Error loading data: {e}")
-            return pd.DataFrame()
-
-
-    def _load_indices(self):
-        print("loading indices...")
-        try:
-            with open(INDEX_FILE, "rb") as f:
-                indices = pickle.load(f)
-            print("indices loaded.")
-            return indices
-        except Exception as e:
-            print(f"Error loading indices: {e}")
-            return {}
-            
+    def _get_conn(self):
+        """Returns a new connection for each query (thread-safe for GUI)."""
+        return sqlite3.connect(self.db_path)
 
     def perform_search(self, params):
         """
         Performs a combined search based on the parameters dictionary.
-        This function handles the logic for the basic search tab.
-        
+        Uses parameterized SQL queries on the SQLite database.
+
         :param params: Dictionary containing:
                        - 'make': str (e.g., 'BMW')
                        - 'model': str (e.g., '3 SERIES')
@@ -58,78 +30,51 @@ class MOT_Search_Tool:
                        - 'mileage_max': int (in actual miles, not thousands)
         :return: List of dictionaries (test records)
         """
-        
-        if self.df.empty:
-            return []
+        conn = self._get_conn()
+        cursor = conn.cursor()
 
-        # Start with all row indices
-        combined_rows = set(self.df.index) 
+        # Build the WHERE clause dynamically
+        conditions = []
+        query_params = []
 
-        # 1. Index-based filtering (Make, Model, Year)
-        
-        # Filter by Make & Model (Most restrictive, use the combined index)
-        make = params.get('make', '').upper()
-        model = params.get('model', '').upper()
-        
-        if make and model:
-            key = (make, model)
-            if 'index_make_model' in self.indices:
-                 rows = self.indices['index_make_model'].get(key, [])
-                 combined_rows = combined_rows.intersection(rows)
-            else:
-                 # Fallback to dataframe filter if index is missing (slower)
-                 combined_rows = combined_rows.intersection(self.df[
-                     (self.df['make'] == make) & (self.df['model'] == model)
-                 ].index)
-        elif make:
-            if 'index_make' in self.indices:
-                rows = self.indices['index_make'].get(make, [])
-                combined_rows = combined_rows.intersection(rows)
-            # No fallback needed as other filters will apply to all makes if this is skipped
-        
-        # Filter by Year (if not already handled by combined_rows)
-        year = params.get('first_use_year', '')
-        if year:
-            if 'index_year' in self.indices:
-                 rows = self.indices['index_year'].get(year, [])
-                 combined_rows = combined_rows.intersection(rows)
-            else:
-                # Fallback to dataframe filter
-                 combined_rows = combined_rows.intersection(self.df[
-                    self.df['first_use_year'] == year
-                 ].index)
-
-
-        # 2. Mileage filtering (Must use boolean mask on DataFrame for range)
+        make = params.get('make', '').strip().upper()
+        model = params.get('model', '').strip().upper()
+        first_use_year = params.get('first_use_year', '').strip()
         mileage_min = params.get('mileage_min', 0)
-        mileage_max = params.get('mileage_max', float('inf'))
-        
-        if mileage_min > 0 or mileage_max < float('inf'):
-            # Create a boolean mask for the mileage condition
-            mileage_mask = (self.df['test_mileage'] >= mileage_min) & (self.df['test_mileage'] <= mileage_max)
-            
-            # Convert current combined_rows back to a list/array for indexing
-            current_df = self.df.loc[list(combined_rows)]
-            
-            # Apply mileage filter to the reduced set
-            filtered_df = current_df[mileage_mask.loc[current_df.index]]
-            
-        else:
-            # If no mileage filter, just use the index filtered rows
-            filtered_df = self.df.loc[list(combined_rows)]
-            
-        
-        # Convert final results to list of dictionaries
-        # Use only relevant columns for initial display in the GUI Treeview
-        columns_to_return = ['test_id', 'make', 'model', 'test_date', 'test_result', 'test_mileage']
-        
-        # Handle cases where filtered_df might be empty
-        if filtered_df.empty:
-            return []
-            
-        # Limit results for better GUI performance (e.g., top 1000)
-        return filtered_df[columns_to_return].head(1000).to_dict('records')
+        mileage_max = params.get('mileage_max', 999999999)
 
+        if make:
+            conditions.append("make = ?")
+            query_params.append(make)
+
+        if model:
+            conditions.append("model = ?")
+            query_params.append(model)
+
+        if first_use_year:
+            conditions.append("first_use_year = ?")
+            query_params.append(first_use_year)
+
+        if mileage_min > 0:
+            conditions.append("test_mileage >= ?")
+            query_params.append(mileage_min)
+
+        if mileage_max < 999999000:
+            conditions.append("test_mileage <= ?")
+            query_params.append(mileage_max)
+
+        # Assemble the SQL query
+        sql = "SELECT test_id, make, model, test_date, test_result, test_mileage FROM cleaned_tests"
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " LIMIT 1000"
+
+        cursor.execute(sql, query_params)
+        columns = ['test_id', 'make', 'model', 'test_date', 'test_result', 'test_mileage']
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        conn.close()
+        return results
 
     def get_vehicle_details(self, test_id):
         """
@@ -137,31 +82,57 @@ class MOT_Search_Tool:
         :param test_id: The unique identifier for the test.
         :return: Dictionary of all columns for that test.
         """
-        if self.df.empty:
-            return {}
+        conn = self._get_conn()
+        cursor = conn.cursor()
 
-        # Assuming 'test_id' is the unique identifier (though it's in the column list, not the index)
-        # Find the row index where test_id matches (must convert test_id to correct type if necessary)
-        # Assuming test_id in the DataFrame is stored as an integer, based on the prompt's ERD.
         try:
             test_id = int(test_id)
         except ValueError:
+            conn.close()
             return {"Error": "Invalid Test ID format."}
-            
-        
-        # Use boolean mask to find the single row
-        row_match = self.df[self.df['test_id'] == test_id]
 
-        if not row_match.empty:
-            # Return the first (and only) match as a dictionary
-            return row_match.iloc[0].to_dict()
+        cursor.execute("SELECT * FROM cleaned_tests WHERE test_id = ?", (test_id,))
+        row = cursor.fetchone()
+
+        if row:
+            # Get column names from cursor description
+            columns = [desc[0] for desc in cursor.description]
+            result = dict(zip(columns, row))
+            conn.close()
+            return result
         else:
+            conn.close()
             return {"Error": f"Test ID {test_id} not found."}
+
+    def get_distinct_makes(self):
+        """Returns a sorted list of all unique vehicle makes."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT make FROM cleaned_tests ORDER BY make")
+        makes = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return makes
+
+    def get_models_for_make(self, make):
+        """Returns a sorted list of all unique models for a given make."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT model FROM cleaned_tests WHERE make = ? ORDER BY model", (make.upper(),))
+        models = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return models
+
+    def get_distinct_years(self):
+        """Returns a sorted list of all unique first_use_years."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT first_use_year FROM cleaned_tests WHERE first_use_year != 'UNKNOWN' ORDER BY first_use_year DESC")
+        years = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return years
 
 
 # --- Singleton Pattern for Search Tool ---
-# Initialize the search tool instance once when the module is imported
-# This ensures data is loaded only when the GUI starts.
 _tool_instance = None
 
 def get_search_tool():
@@ -180,12 +151,22 @@ def get_vehicle_details(test_id):
     """GUI entry point for retrieving details."""
     return get_search_tool().get_vehicle_details(test_id)
 
+def get_distinct_makes():
+    """GUI entry point for retrieving all unique makes."""
+    return get_search_tool().get_distinct_makes()
+
+def get_models_for_make(make):
+    """GUI entry point for retrieving models for a given make."""
+    return get_search_tool().get_models_for_make(make)
+
+def get_distinct_years():
+    """GUI entry point for retrieving all unique years."""
+    return get_search_tool().get_distinct_years()
+
 
 # --- Original main() preserved for CLI testing (optional) ---
 def main():
     tool = get_search_tool()
-    
-    # ... (Your original CLI logic can be reimplemented here, calling tool methods) ...
     print("\n--- search tool ready ---")
 
     # Example CLI call:

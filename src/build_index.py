@@ -1,87 +1,54 @@
+import sqlite3
 import os
 import sys
-import pandas as pd
-import pickle
 
-# input and output paths
-INPUT_FILE = os.path.join("data", "clean_sample_2021.csv")
-OUTPUT_DIR = os.path.join("output", "data_store")
+DB_PATH = os.path.join("data", "mot_database.db")
 
+def create_indices(progress_callback=None):
+    if not os.path.exists(DB_PATH):
+        print(f"Error: Database not found at {DB_PATH}")
+        sys.exit("Database not found. Run load_data.py first.")
 
-def ensure_out_dir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
 
-
-def load_csv(path):
-    print("Loading cleaned CSV...")
-    df = pd.read_csv(path, low_memory=False)
-    print("Loaded:", len(df), "rows")
-    return df
-
-
-def create_indices(df):
-    print("Creating indices...")
-
-    index_make = {}
-    index_make_model = {}
-    index_year = {}
-
-    for i, row in df.iterrows():
-        make = str(row.get("make", "")).strip().upper()
-        model = str(row.get("model", "")).strip().upper()
-        year_raw = str(row.get("first_use_date", ""))
-
-        # extract year from first_use_date
-        year = year_raw[:4] if len(year_raw) >= 4 else "UNKNOWN"
-
-        index_make.setdefault(make, []).append(i)
-        index_make_model.setdefault((make, model), []).append(i)
-        index_year.setdefault(year, []).append(i)
-
-    print("Indices created.")
-    return {
-        "index_make": index_make,
-        "index_make_model": index_make_model,
-        "index_year": index_year,
+    # Define indexes to create
+    indexes = {
+        "idx_test_id": "CREATE UNIQUE INDEX IF NOT EXISTS idx_test_id ON cleaned_tests (test_id)",
+        "idx_make_model": "CREATE INDEX IF NOT EXISTS idx_make_model ON cleaned_tests (make, model)",
+        "idx_make": "CREATE INDEX IF NOT EXISTS idx_make ON cleaned_tests (make)",
+        "idx_first_use_year": "CREATE INDEX IF NOT EXISTS idx_first_use_year ON cleaned_tests (first_use_year)",
+        "idx_test_mileage": "CREATE INDEX IF NOT EXISTS idx_test_mileage ON cleaned_tests (test_mileage)"
     }
 
+    total_indexes = len(indexes)
+    
+    print("Creating database indices for high-performance querying...")
+    
+    for idx_num, (name, sql) in enumerate(indexes.items()):
+        print(f"Creating index {name}...")
+        try:
+            cursor.execute(sql)
+            conn.commit()
+        except Exception as e:
+            print(f"Error creating index {name}: {e}")
+            conn.close()
+            raise e
 
-def save_outputs(df, indices):
-    ensure_out_dir(OUTPUT_DIR)
+        # Calculate progress
+        progress_pct = int((idx_num + 1) / total_indexes * 100)
+        if progress_callback:
+            progress_callback(progress_pct)
+        else:
+            sys.stdout.write(f"\rIndexing progress: {progress_pct}%")
+            sys.stdout.flush()
 
-    print("Saving dataset...")
-    try:
-        df.reset_index(drop=True).to_feather(os.path.join(OUTPUT_DIR, "clean_sample_2021.feather"))
-        print("Saved feather file.")
-    except Exception as e:
-        print("Feather failed, saving pickle instead.", e)
-        df.to_pickle(os.path.join(OUTPUT_DIR, "clean_sample_2021.pkl"))
-
-    print("Saving indices...")
-    with open(os.path.join(OUTPUT_DIR, "indices.pkl"), "wb") as f:
-        pickle.dump(indices, f)
-
-    print("Data stored successfully in 'output/data_store'.")
-
-
-def quick_test(indices):
-    print("\n--- quick test ---")
-    print("BMW count:", len(indices["index_make"].get("BMW", [])))
-    print(("BMW", "3 SERIES"), "count:", len(indices["index_make_model"].get(("BMW", "3 SERIES"), [])))
-    print("Year 2015 count:", len(indices["index_year"].get("2015", [])))
-
+    print("\nAll database indices created successfully!")
+    conn.close()
 
 def main():
-    if not os.path.exists(INPUT_FILE):
-        print("error: CSV not found at:", INPUT_FILE)
-        sys.exit()
-
-    df = load_csv(INPUT_FILE)
-    indices = create_indices(df)
-    save_outputs(df, indices)
-    quick_test(indices)
-
+    create_indices()
 
 if __name__ == "__main__":
     main()
+
