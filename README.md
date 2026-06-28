@@ -1,18 +1,18 @@
-# 🚗 MOT 2021 Car Data Analysis Tool
+﻿# 🚗 MOT 2021 Car Data Analysis Tool
 
-A desktop data analysis tool for exploring the full UK **2021 MOT test results dataset** — over **40 million vehicle test records**. Built with Python, SQLite, Tkinter, and Matplotlib.
+A desktop data analysis tool for exploring the full UK **2021 MOT test results dataset** - over **40 million vehicle test records**. Built with Python, SQLite, Tkinter, and Matplotlib.
 
 ---
 
 ## ✨ Features
 
-- **Automatic first-time setup** — on first launch, the app processes all raw CSV files and builds a local SQLite database automatically, with a progress bar
-- **Fast search** — filter by Make, Model, First Use Year, and Mileage range using indexed SQL queries
-- **Dynamic dropdowns** — Make → Model comboboxes auto-populate from the database
-- **Full record details** — click any search result to view the complete test record
-- **Pass rate charts** — generate dark-themed Matplotlib graphs showing MOT pass rate by vehicle age or mileage
-- **CSV export** — save any search result set to a CSV file
-- **Dark mode UI** — premium dark theme throughout
+- **Automatic first-time setup** - on first launch, the app processes all raw CSV files and builds a local SQLite database automatically, with a progress bar
+- **Fast search** - filter by Make, Model, First Use Year, and Mileage range using indexed SQL queries
+- **Dynamic dropdowns** - Make → Model comboboxes auto-populate from the database
+- **Full record details** - click any search result to view the complete test record
+- **Pass rate charts** - generate dark-themed Matplotlib graphs showing MOT pass rate by vehicle age or mileage
+- **CSV export** - save any search result set to a CSV file
+- **Dark mode UI** - premium dark theme throughout
 
 ---
 
@@ -70,7 +70,7 @@ numpy>=1.25.0
 matplotlib>=3.7.0
 ```
 
-> `sqlite3` and `tkinter` are included with Python — no extra install needed.
+> `sqlite3` and `tkinter` are included with Python - no extra install needed.
 
 ---
 
@@ -100,19 +100,19 @@ python src/gui_app.py
 A setup dialog will appear automatically and run the full data pipeline:
 
 ```
-📂 Stage 1/5 — Loading raw CSV files into database...   (0–50%)
-🧹 Stage 2/5 — Cleaning and standardising data...       (50–78%)
-🔧 Stage 3/5 — Building search indexes...               (78–90%)
-📊 Stage 4/5 — Running statistical analysis...          (90–97%)
-📋 Stage 5/5 — Generating summary report...             (97–100%)
-✅ Database ready — GUI opens
+📂 Stage 1/5 - Loading raw CSV files into database...   (0–50%)
+🧹 Stage 2/5 - Cleaning and standardising data...       (50–78%)
+🔧 Stage 3/5 - Building search indexes...               (78–90%)
+📊 Stage 4/5 - Running statistical analysis...          (90–97%)
+📋 Stage 5/5 - Generating summary report...             (97–100%)
+✅ Database ready - GUI opens
 ```
 
 > ⏱️ This takes several hours on the full 40M-row dataset. You can let it run overnight.
 
 ### Subsequent Launches
 
-The GUI opens directly — the pipeline is skipped since the database already exists.
+The GUI opens directly - the pipeline is skipped since the database already exists.
 
 ---
 
@@ -191,7 +191,7 @@ Divides the dataset across 4 processes to compute mileage statistics in parallel
 
 ## 📝 Notes
 
-- All file paths use relative references — the tool works on any machine
+- All file paths use relative references - the tool works on any machine
 - The raw CSV files and database are excluded from version control
-- The pipeline is modular — each `src/` script can also be run independently for testing
+- The pipeline is modular - each `src/` script can also be run independently for testing
 - Re-running the pipeline: delete `data/mot_database.db` and relaunch `gui_app.py`
