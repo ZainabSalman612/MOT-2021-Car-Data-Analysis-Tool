@@ -1,144 +1,197 @@
-"# MOT 2021 Project" 
-# MOT Data Processing Project
+# 🚗 MOT 2021 Car Data Analysis Tool
 
-This project processes MOT (Vehicle Test) data through a complete pipeline including loading, cleaning, indexing, analysis, and reporting. The project is organised into modular Python scripts stored in the `src` folder.
+A desktop data analysis tool for exploring the full UK **2021 MOT test results dataset** — over **40 million vehicle test records**. Built with Python, SQLite, Tkinter, and Matplotlib.
+
+---
+
+## ✨ Features
+
+- **Automatic first-time setup** — on first launch, the app processes all raw CSV files and builds a local SQLite database automatically, with a progress bar
+- **Fast search** — filter by Make, Model, First Use Year, and Mileage range using indexed SQL queries
+- **Dynamic dropdowns** — Make → Model comboboxes auto-populate from the database
+- **Full record details** — click any search result to view the complete test record
+- **Pass rate charts** — generate dark-themed Matplotlib graphs showing MOT pass rate by vehicle age or mileage
+- **CSV export** — save any search result set to a CSV file
+- **Dark mode UI** — premium dark theme throughout
 
 ---
 
 ## 📂 Project Structure
 
-MOT_PROJECT/
+```
+MOT-2021-Car-Data-Analysis-Tool/
 │
-├── data/ # input CSV files (raw and cleaned)
-│ └── clean_sample_2021.csv
+├── data/
+│   ├── dft_test_result_2021/
+│   │   └── test_results_2021/
+│   │       ├── test_result_1.csv   ← raw dataset (not on GitHub)
+│   │       ├── test_result_2.csv
+│   │       └── ... (12 files total, ~4.4 GB)
+│   └── mot_database.db             ← generated on first run (not on GitHub)
 │
 ├── output/
-│ ├── data_store/ # feather dataset + indices.pkl
-│ ├── search_results/ # saved search exports
-│ └── reports/ # generated summary reports
+│   └── reports/
+│       └── summary_report.txt      ← generated on first run
 │
-├── src/ # all Python scripts
-│ ├── load_data.py
-│ ├── inspect_data.py
-│ ├── clean_data.py
-│ ├── eda_basic.py
-│ ├── analysis_stats.py
-│ ├── build_index.py
-│ ├── search_tool.py
-│ ├── export_search.py
-│ ├── summary_report.py
-│ └── run_all.py
+├── src/
+│   ├── gui_app.py          ← main entry point (run this)
+│   ├── load_data.py        ← loads 12 CSV files into SQLite in chunks
+│   ├── clean_data.py       ← cleans and standardises the raw data
+│   ├── build_index.py      ← creates SQL indexes for fast querying
+│   ├── analysis_stats.py   ← statistical analysis + Matplotlib charts
+│   ├── summary_report.py   ← generates summary_report.txt
+│   ├── search_tool.py      ← search and filter logic (SQL queries)
+│   ├── export_search.py    ← exports search results to CSV
+│   ├── inspect_data.py     ← CLI utility to inspect raw data
+│   ├── eda_basic.py        ← basic exploratory data analysis
+│   └── mpi_analysis.py     ← optional MPI parallel analysis
 │
+├── requirements.txt
+├── verify_setup.py         ← checks imports and database state
 └── README.md
-
+```
 
 ---
 
 ## ⚙️ Requirements
 
-Install required packages:
-pip install pandas pyarrow
+**Python 3.10+** is required.
 
+Install all dependencies:
 
----
+```bash
+pip install -r requirements.txt
+```
 
-## 🚀 Running the Full Pipeline
+`requirements.txt` includes:
+```
+pandas>=2.0.0
+numpy>=1.25.0
+matplotlib>=3.7.0
+```
 
-To execute all major scripts in order:
-
-python src/run_all.py
-
-
-This runs:
-
-1. load_data.py
-2. clean_data.py
-3. analysis_stats.py
-4. build_index.py
-5. summary_report.py
+> `sqlite3` and `tkinter` are included with Python — no extra install needed.
 
 ---
 
-## 🧩 Individual Scripts
+## 🗂️ Dataset
 
-### **1. load_data.py**
-Loads the raw CSV files and prepares a combined dataset.
+Download the **2021 MOT test results** dataset from the UK government:  
+🔗 https://www.data.gov.uk/dataset/e3939ef8-30c7-4ca8-9c7c-ad9475cc9b2f/anonymised-mot-tests-and-results
 
-### **2. inspect_data.py**
-Displays first rows, column names, and dataset shape.
+Place the 12 CSV files into:
+```
+data/dft_test_result_2021/test_results_2021/
+```
+Files should be named `test_result_1.csv` through `test_result_12.csv`.
 
-### **3. clean_data.py**
-Cleans the dataset, fixes types, removes missing values, and saves: data/clean_sample_2021.csv
+---
 
+## 🚀 How to Run
 
-### **4. eda_basic.py**
-Creates EDA plots and saves them in: output/screenshots/
+There is only **one command** to run:
 
+```bash
+python src/gui_app.py
+```
 
-### **5. analysis_stats.py**
-Generates basic numeric summaries and statistics.
+### First Launch (no database yet)
 
-### **6. build_index.py**
-Creates:
-- a fast-load dataset (`clean_sample_2021.feather`)
-- indices for make, model, year
-Stored in: output/data_store/
+A setup dialog will appear automatically and run the full data pipeline:
 
+```
+📂 Stage 1/5 — Loading raw CSV files into database...   (0–50%)
+🧹 Stage 2/5 — Cleaning and standardising data...       (50–78%)
+🔧 Stage 3/5 — Building search indexes...               (78–90%)
+📊 Stage 4/5 — Running statistical analysis...          (90–97%)
+📋 Stage 5/5 — Generating summary report...             (97–100%)
+✅ Database ready — GUI opens
+```
 
-### **7. search_tool.py**
-Interactive CLI search tool:
-- search by make
-- search by make + model
-- search by year
+> ⏱️ This takes several hours on the full 40M-row dataset. You can let it run overnight.
 
-### **8. export_search.py**
-Saves filtered results into: output/search_results/
+### Subsequent Launches
 
+The GUI opens directly — the pipeline is skipped since the database already exists.
 
-### **9. summary_report.py**
-Generates: output/reports/summary_report.txt
+---
 
+## 🖥️ GUI Guide
 
-### **10. run_all.py**
-Runs the full workflow automatically.
+### Search Tab
+| Control | Description |
+|---|---|
+| **Vehicle Make** | Dropdown of all unique makes in the database |
+| **Vehicle Model** | Auto-filters to models for selected make |
+| **First Use Year** | Filter by registration year |
+| **Min / Max Mileage** | Filter by mileage range (in thousands) |
+| **Run Search** | Returns up to 1,000 matching records |
+| **Export Results** | Save the current results as a CSV file |
 
+Click any row in the results table to view the full test record details at the bottom.
 
-## 🧬 MPI (Cluster Computing) — *Bonus Component*
-This project includes an optional MPI version of the analysis using `mpi4py`.
+### Analysis Tab
+| Control | Description |
+|---|---|
+| **Make + Model** | Select a vehicle to analyse |
+| **Group By** | `age` (years) or `mileage` |
+| **Generate Report** | Plots MOT pass rate chart for the selected vehicle |
 
-### **Run using mpiexec:**
+---
+
+## 🗄️ Database
+
+The database file (`data/mot_database.db`) is a local SQLite file created on first run. It is excluded from Git (via `.gitignore`) because of its size (~10–15 GB for 40M rows).
+
+| Table | Description |
+|---|---|
+| `cleaned_tests` | All 40M cleaned and standardised MOT test records |
+
+| Index | Column(s) | Purpose |
+|---|---|---|
+| `idx_make` | `make` | Fast make filtering |
+| `idx_make_model` | `make, model` | Fast make+model filtering |
+| `idx_first_use_year` | `first_use_year` | Fast year filtering |
+| `idx_test_mileage` | `test_mileage` | Fast mileage range queries |
+| `idx_test_id` | `test_id` | Fast single-record lookup |
+
+---
+
+## 🔍 Verify Setup
+
+Run this to confirm everything is installed and working:
+
+```bash
+python verify_setup.py
+```
+
+---
+
+## 📄 Output Files
+
+| File | Location | Description |
+|---|---|---|
+| SQLite database | `data/mot_database.db` | All 40M cleaned records |
+| Analysis summary | `output/analysis_summary.txt` | Test result distribution |
+| Summary report | `output/reports/summary_report.txt` | Top makes, models, years, mileage stats |
+
+---
+
+## 🧬 Optional: MPI Parallel Analysis
+
+For HPC/cluster environments, an MPI version is included:
+
+```bash
 mpiexec -n 4 python src/mpi_analysis.py
+```
 
-This divides the cleaned dataset into 4 parts and computes:
-- rows per chunk
-- average mileage
-- min / max mileage
-
-Then gathers final combined results on the master node.
+Divides the dataset across 4 processes to compute mileage statistics in parallel.
 
 ---
 
-## 📄 Summary Report Output
+## 📝 Notes
 
-The summary report includes:
-- total number of vehicle records
-- top 10 manufacturers
-- top 10 models
-- distribution of years
-- mileage statistics
-- overall dataset description
----
-
-## ✔️ Notes
-
-- All outputs are saved automatically in the `output/` folder.
-- All paths use relative paths so the script works on any machine.
-- The pipeline is modular — each script can run independently.
-- `run_all.py` provides a complete automated workflow.
-- `mpi_analysis.py` demonstrates parallel processing for extra marks.
-
-
-
-
-
-
+- All file paths use relative references — the tool works on any machine
+- The raw CSV files and database are excluded from version control
+- The pipeline is modular — each `src/` script can also be run independently for testing
+- Re-running the pipeline: delete `data/mot_database.db` and relaunch `gui_app.py`
