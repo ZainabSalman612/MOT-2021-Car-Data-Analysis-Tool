@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import sqlite3
+import queue
 
 # ====================================================================
 # Ensure project root is correct for relative paths
@@ -200,19 +201,22 @@ class PipelineInitDialog:
 
         self.success = False
         self.error_msg = None
+        # Thread-safe message queue: background thread writes, main thread reads
+        self._queue = queue.Queue()
 
     def run_pipeline(self):
-        """Start the pipeline in a background thread."""
+        """Start the pipeline in a background thread, then begin polling the queue."""
         thread = threading.Thread(target=self._run_pipeline_thread, daemon=True)
         thread.start()
-        self._poll_completion(thread)
+        # Start polling from the main thread (safe)
+        self.dialog.after(100, self._poll_queue)
 
+    # --- Background thread only puts into the queue; never touches Tkinter ---
     def _update_stage(self, stage_text):
-        self.dialog.after(0, lambda: self.stage_label.config(text=stage_text))
+        self._queue.put(('stage', stage_text))
 
     def _update_progress(self, pct):
-        self.dialog.after(0, lambda: self.progress_var.set(pct))
-        self.dialog.after(0, lambda: self.pct_label.config(text=f"{int(pct)}%"))
+        self._queue.put(('progress', pct))
 
     def _run_pipeline_thread(self):
         try:
@@ -253,21 +257,37 @@ class PipelineInitDialog:
 
             self._update_progress(100)
             self._update_stage("✅  Database initialization complete!")
-            self.success = True
+            self._queue.put(('done', None))
 
         except Exception as e:
-            self.error_msg = str(e)
-            self._update_stage(f"❌  Error: {e}")
+            self._queue.put(('error', str(e)))
 
-    def _poll_completion(self, thread):
-        if thread.is_alive():
-            self.dialog.after(200, lambda: self._poll_completion(thread))
-        else:
-            if self.success:
-                self.dialog.after(1200, self.dialog.destroy)
-            else:
-                self.status_label.config(text="Pipeline failed. Close and fix the error, then restart.",
-                                         fg=COLORS['red'])
+    # --- Main thread polls the queue and performs all UI updates ---
+    def _poll_queue(self):
+        try:
+            while True:
+                msg_type, value = self._queue.get_nowait()
+                if msg_type == 'stage':
+                    self.stage_label.config(text=value)
+                elif msg_type == 'progress':
+                    self.progress_var.set(value)
+                    self.pct_label.config(text=f"{int(value)}%")
+                elif msg_type == 'done':
+                    self.success = True
+                    self.dialog.after(1200, self.dialog.destroy)
+                    return  # Stop polling
+                elif msg_type == 'error':
+                    self.error_msg = value
+                    self.stage_label.config(text=f"❌  Error during pipeline.")
+                    self.status_label.config(
+                        text=f"Error: {value}\n\nClose this window, fix the issue, then restart.",
+                        fg=COLORS['red']
+                    )
+                    return  # Stop polling
+        except queue.Empty:
+            pass
+        # Reschedule on main thread in 100ms
+        self.dialog.after(100, self._poll_queue)
 
 
 # ====================================================================
