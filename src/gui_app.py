@@ -219,30 +219,36 @@ class PipelineInitDialog:
             from load_data import load_in_chunks
             from clean_data import clean_data
             from build_index import create_indices
+            from analysis_stats import analysis_stats
             from summary_report import write_report
 
             # Stage 1: Load data (0-50%)
-            self._update_stage("📂  Stage 1/4 — Loading raw CSV files into database...")
+            self._update_stage("📂  Stage 1/5 — Loading raw CSV files into database...")
             def load_progress(pct):
                 self._update_progress(pct * 0.50)
             load_in_chunks(progress_callback=load_progress)
 
-            # Stage 2: Clean data (50-80%)
-            self._update_stage("🧹  Stage 2/4 — Cleaning and standardizing data...")
+            # Stage 2: Clean data (50-78%)
+            self._update_stage("🧹  Stage 2/5 — Cleaning and standardizing data...")
             def clean_progress(pct):
-                self._update_progress(50 + pct * 0.30)
+                self._update_progress(50 + pct * 0.28)
             clean_data(progress_callback=clean_progress)
 
-            # Stage 3: Build indexes (80-95%)
-            self._update_stage("🔧  Stage 3/4 — Building search indexes...")
+            # Stage 3: Build indexes (78-90%)
+            self._update_stage("🔧  Stage 3/5 — Building search indexes...")
             def index_progress(pct):
-                self._update_progress(80 + pct * 0.15)
+                self._update_progress(78 + pct * 0.12)
             create_indices(progress_callback=index_progress)
 
-            # Stage 4: Summary report (95-100%)
-            self._update_stage("📊  Stage 4/4 — Generating summary report...")
+            # Stage 4: Analysis stats (90-97%)
+            self._update_stage("📊  Stage 4/5 — Running statistical analysis...")
+            analysis_stats()
+            self._update_progress(97)
+
+            # Stage 5: Summary report (97-100%)
+            self._update_stage("📋  Stage 5/5 — Generating summary report...")
             def report_progress(pct):
-                self._update_progress(95 + pct * 0.05)
+                self._update_progress(97 + pct * 0.03)
             write_report(progress_callback=report_progress)
 
             self._update_progress(100)
