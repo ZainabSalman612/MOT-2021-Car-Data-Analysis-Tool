@@ -22,7 +22,7 @@ DB_PATH = os.path.join("data", "mot_database.db")
 # IMPORT BACKEND LOGIC
 # ====================================================================
 try:
-    from search_tool import perform_search, get_vehicle_details, get_distinct_makes, get_models_for_make, get_distinct_years
+    from search_tool import perform_search, get_vehicle_details, get_distinct_makes, get_models_for_make, get_distinct_years, get_mileage_range
     from analysis_stats import generate_pass_rate_graph
     from export_search import export_search
 except ImportError as e:
@@ -310,6 +310,8 @@ class MOT_Data_Browser_App:
         self.first_use_year_var = tk.StringVar()
         self.analysis_make_var = tk.StringVar()
         self.analysis_model_var = tk.StringVar()
+        self.analysis_mileage_min_var = tk.StringVar()
+        self.analysis_mileage_max_var = tk.StringVar()
         self.analysis_criteria_var = tk.StringVar(value='age')
         self.current_search_results = []
 
@@ -356,6 +358,12 @@ class MOT_Data_Browser_App:
         except Exception as e:
             self.status_label.config(text=f" ⚠️ Error loading dropdown data: {e}")
 
+    def _update_search_mileage_range(self, make, model=None):
+        min_val, max_val = get_mileage_range(make, model)
+        if min_val or max_val != 999999000:
+            self.mileage_min_var.set(str(min_val // 1000))
+            self.mileage_max_var.set(str(max_val // 1000))
+
     def _on_make_selected(self, event=None):
         """When a make is selected, populate the model dropdown with matching models."""
         make = self.make_var.get().strip()
@@ -364,11 +372,26 @@ class MOT_Data_Browser_App:
                 models = get_models_for_make(make)
                 self.model_combo['values'] = [''] + models
                 self.model_var.set('')
+                self._update_search_mileage_range(make)
             except Exception:
                 self.model_combo['values'] = []
         else:
             self.model_combo['values'] = []
             self.model_var.set('')
+
+    def _on_model_selected(self, event=None):
+        make = self.make_var.get().strip()
+        model = self.model_var.get().strip()
+        if make and model:
+            self._update_search_mileage_range(make, model)
+        elif make:
+            self._update_search_mileage_range(make)
+
+    def _update_analysis_mileage_range(self, make, model=None):
+        min_val, max_val = get_mileage_range(make, model)
+        if min_val or max_val != 999999000:
+            self.analysis_mileage_min_var.set(str(min_val // 1000))
+            self.analysis_mileage_max_var.set(str(max_val // 1000))
 
     def _on_analysis_make_selected(self, event=None):
         """When a make is selected on analysis tab, populate that model dropdown."""
@@ -378,11 +401,20 @@ class MOT_Data_Browser_App:
                 models = get_models_for_make(make)
                 self.analysis_model_combo['values'] = models
                 self.analysis_model_var.set('')
+                self._update_analysis_mileage_range(make)
             except Exception:
                 self.analysis_model_combo['values'] = []
         else:
             self.analysis_model_combo['values'] = []
             self.analysis_model_var.set('')
+
+    def _on_analysis_model_selected(self, event=None):
+        make = self.analysis_make_var.get().strip()
+        model = self.analysis_model_var.get().strip()
+        if make and model:
+            self._update_analysis_mileage_range(make, model)
+        elif make:
+            self._update_analysis_mileage_range(make)
 
 
 # ====================================================================
@@ -410,6 +442,7 @@ class MOT_Data_Browser_App:
         ttk.Label(search_frame, text="Vehicle Model:").grid(row=row, column=0, sticky=tk.W, padx=8, pady=6)
         self.model_combo = ttk.Combobox(search_frame, textvariable=self.model_var, width=22, state='readonly')
         self.model_combo.grid(row=row, column=1, padx=8, pady=6)
+        self.model_combo.bind('<<ComboboxSelected>>', self._on_model_selected)
         row += 1
 
         # First Use Year dropdown
@@ -633,18 +666,26 @@ class MOT_Data_Browser_App:
         self.analysis_model_combo = ttk.Combobox(control_frame, textvariable=self.analysis_model_var,
                                                   width=18, state='readonly')
         self.analysis_model_combo.grid(row=0, column=3, padx=8, pady=8)
+        self.analysis_model_combo.bind('<<ComboboxSelected>>', self._on_analysis_model_selected)
+
+        # Min/Max Mileage for Graph filtering
+        ttk.Label(control_frame, text="Min Mileage (k):").grid(row=0, column=4, padx=8, pady=8, sticky=tk.W)
+        ttk.Entry(control_frame, textvariable=self.analysis_mileage_min_var, width=8).grid(row=0, column=5, padx=8, pady=8)
+        
+        ttk.Label(control_frame, text="Max Mileage (k):").grid(row=0, column=6, padx=8, pady=8, sticky=tk.W)
+        ttk.Entry(control_frame, textvariable=self.analysis_mileage_max_var, width=8).grid(row=0, column=7, padx=8, pady=8)
 
         # Criteria Selection (Age or Mileage)
-        ttk.Label(control_frame, text="Group By:").grid(row=0, column=4, padx=8, pady=8, sticky=tk.W)
+        ttk.Label(control_frame, text="Group By:").grid(row=0, column=8, padx=8, pady=8, sticky=tk.W)
         criteria_options = ['age', 'mileage']
         criteria_combo = ttk.Combobox(control_frame, textvariable=self.analysis_criteria_var,
-                                       values=criteria_options, width=12, state='readonly')
-        criteria_combo.grid(row=0, column=5, padx=8, pady=8)
+                                       values=criteria_options, width=10, state='readonly')
+        criteria_combo.grid(row=0, column=9, padx=8, pady=8)
 
         # Generate Report Button
         report_button = ttk.Button(control_frame, text="📊  Generate Report",
                                     command=self.run_analysis_report, style='Accent.TButton')
-        report_button.grid(row=0, column=6, padx=18, pady=8)
+        report_button.grid(row=0, column=10, padx=18, pady=8)
 
         # Graph Display Area
         self.graph_frame = ttk.Frame(self.analysis_tab)
@@ -663,6 +704,17 @@ class MOT_Data_Browser_App:
             messagebox.showwarning("Missing Input", "Please select both Vehicle Make and Model for analysis.")
             return
 
+        try:
+            min_m = int(self.analysis_mileage_min_var.get().strip() or 0) * 1000
+        except ValueError:
+            min_m = 0
+
+        try:
+            max_m_input = self.analysis_mileage_max_var.get().strip()
+            max_m = int(max_m_input or 999999) * 1000
+        except ValueError:
+            max_m = 999999 * 1000
+
         self.status_label.config(text=f" 🔄 Generating pass rate report for {make} {model} by {criteria}...")
         self.master.update_idletasks()
 
@@ -671,7 +723,7 @@ class MOT_Data_Browser_App:
             self.canvas_widget.destroy()
 
         try:
-            fig = generate_pass_rate_graph(make, model, criteria)
+            fig = generate_pass_rate_graph(make, model, criteria, min_mileage=min_m, max_mileage=max_m)
 
             canvas = FigureCanvasTkAgg(fig, master=self.graph_frame)
             self.canvas_widget = canvas.get_tk_widget()

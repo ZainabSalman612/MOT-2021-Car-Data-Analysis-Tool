@@ -131,6 +131,28 @@ class MOT_Search_Tool:
         conn.close()
         return years
 
+    def get_mileage_range(self, make, model=None):
+        """Returns the (min, max) mileage for a given make and optional model."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        query = "SELECT MIN(test_mileage), MAX(test_mileage) FROM cleaned_tests WHERE test_mileage > 0"
+        params = []
+        if make:
+            query += " AND make = ?"
+            params.append(make.upper())
+        if model:
+            query += " AND model = ?"
+            params.append(model.upper())
+            
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0] is not None and row[1] is not None:
+            return row[0], row[1]
+        return 0, 999999000
+
+
 
 # --- Singleton Pattern for Search Tool ---
 _tool_instance = None
@@ -162,6 +184,11 @@ def get_models_for_make(make):
 def get_distinct_years():
     """GUI entry point for retrieving all unique years."""
     return get_search_tool().get_distinct_years()
+
+def get_mileage_range(make, model=None):
+    """GUI entry point for retrieving mileage range."""
+    return get_search_tool().get_mileage_range(make, model)
+
 
 
 # --- Original main() preserved for CLI testing (optional) ---

@@ -32,7 +32,7 @@ def generate_error_figure(title, message):
     return fig
 
 
-def generate_pass_rate_graph(make, model, criteria):
+def generate_pass_rate_graph(make, model, criteria, min_mileage=0, max_mileage=999999000):
     """
     Generates a Matplotlib Figure showing pass rates by age or mileage for a specific make/model.
     Uses SQL queries directly on the SQLite database to avoid loading millions of rows into memory.
@@ -63,6 +63,7 @@ def generate_pass_rate_graph(make, model, criteria):
               AND test_result IN ('P', 'F')
               AND test_date != '' AND first_use_date != ''
               AND LENGTH(test_date) >= 4 AND LENGTH(first_use_date) >= 4
+              AND test_mileage >= ? AND test_mileage <= ?
             GROUP BY group_val
             HAVING group_val >= 0 AND group_val <= 50
             ORDER BY group_val
@@ -78,7 +79,7 @@ def generate_pass_rate_graph(make, model, criteria):
             FROM cleaned_tests
             WHERE make = ? AND model = ? 
               AND test_result IN ('P', 'F')
-              AND test_mileage > 0
+              AND test_mileage >= ? AND test_mileage <= ?
             GROUP BY group_val
             ORDER BY group_val
         """
@@ -86,7 +87,7 @@ def generate_pass_rate_graph(make, model, criteria):
         title_suffix = "by Mileage"
 
     cursor = conn.cursor()
-    cursor.execute(query, (make, model))
+    cursor.execute(query, (make, model, max(1, min_mileage), max_mileage))
     rows = cursor.fetchall()
     conn.close()
 
@@ -101,6 +102,7 @@ def generate_pass_rate_graph(make, model, criteria):
     pass_rates = [(p / t * 100) if t > 0 else 0 for p, t in zip(total_passes, total_tests)]
 
     # Generate Matplotlib Figure with dark theme
+    plt.close('all') # Clear previous figures to prevent memory leaks
     fig, ax = plt.subplots(figsize=(10, 6))
     fig.patch.set_facecolor('#1e1e2e')
     ax.set_facecolor('#252538')
